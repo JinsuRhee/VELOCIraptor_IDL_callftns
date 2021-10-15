@@ -19,6 +19,7 @@
       Integer(kind=4) i, j, k, l, ind0, ind1, mi, horg
       REAL(KIND=8), allocatable, dimension(:,:) :: raw_dbl, raw_dbl2
       INTEGER(KIND=8), allocatable, dimension(:,:) :: raw_int, raw_int2
+      REAL(KIND=8) dmp_mass
 
       n_ptcl    = larr(1)
       n_dom     = larr(2)
@@ -27,6 +28,8 @@
       n_str     = larr(11)
       longint   = larr(20)
       horg      = larr(12)
+      IF(horg .EQ.0) horg = 1   !! star particle search as a default
+      dmp_mass  = darr(12)
 
       CALL OMP_SET_NUM_THREADS(n_thread)
 
@@ -46,19 +49,21 @@
               raw_dbl, raw_int, longint)
 
       IF(larr(19) .GT. 10) &
-        CALL GET_PTCL_NUM(raw_int, n_raw, n_star, n_thread, horg)
+        CALL GET_PTCL_NUM(raw_int, raw_dbl, n_raw, n_star, n_thread, &
+                horg, dmp_mass)
       IF(larr(19) .LT. 10) &
-        CALL GET_PTCL_NUM_YZiCS(raw_dbl, n_raw, n_star, n_thread, horg)
+        CALL GET_PTCL_NUM_YZiCS(raw_dbl, n_raw, n_star, n_thread, &
+                horg, dmp_mass)
 
       ALLOCATE(raw_dbl2(1:n_star,1:9))
       ALLOCATE(raw_int2(1:n_star,1:1))
 
       IF(larr(19) .GT. 10) &
         CALL GET_STAR_PTCL(raw_dbl, raw_int, raw_dbl2, raw_int2, &
-              n_raw, n_star, horg)
+              n_raw, n_star, horg, dmp_mass)
       IF(larr(19) .LT. 10) &
         CALL GET_STAR_PTCL_YZiCS(raw_dbl, raw_int, raw_dbl2, raw_int2, &
-              n_raw, n_star, horg)
+              n_raw, n_star, horg, dmp_mass)
 
       DEALLOCATE(raw_dbl, raw_int)
 
@@ -166,12 +171,12 @@
 !! GET TARGETTED PARTICLE
 !!!!!
       SUBROUTINE GET_STAR_PTCL(p_dbl, p_int, p_dbl2, p_int2, &
-                      n_raw, n_star, horg)
+                      n_raw, n_star, horg, dmp_mass)
 
       Implicit none
       Integer(kind=4) n_raw, n_star, horg
 
-      Real(kind=8) p_dbl(n_raw,9), p_dbl2(n_star,9)
+      Real(kind=8) p_dbl(n_raw,9), p_dbl2(n_star,9), dmp_mass
       Integer(kind=8) p_int(n_raw,2), p_int2(n_star,1)
 
       Integer(kind=4) i, j, nn
@@ -191,12 +196,14 @@
       ELSE IF (horg .LT. 0) THEN !DM
         Do i=1, n_raw
           IF(p_int(i,2) .eq. 1) THEN
-            DO j=1, 9
-              p_dbl2(nn,j) = p_dbl(i,j)
-            ENDDO
+            IF(ABS(p_dbl(i,7)-dmp_mass)/dmp_mass .LT. 1e-5) THEN
+              DO j=1, 9
+                p_dbl2(nn,j) = p_dbl(i,j)
+              ENDDO
 
-            p_int2(nn,1) = p_int(i,1)
-            nn = nn + 1
+              p_int2(nn,1) = p_int(i,1)
+              nn = nn + 1
+            ENDIF
           ENDIF
         ENDDO
       ENDIF
@@ -207,12 +214,12 @@
 !! GET TARGETTED PARTICLE_YZiCS
 !!!!!
       SUBROUTINE GET_STAR_PTCL_YZiCS(p_dbl, p_int, p_dbl2, p_int2, &
-                      n_raw, n_star, horg)
+                      n_raw, n_star, horg, dmp_mass)
 
       Implicit none
       Integer(kind=4) n_raw, n_star, horg
 
-      Real(kind=8) p_dbl(n_raw,9), p_dbl2(n_star,9)
+      Real(kind=8) p_dbl(n_raw,9), p_dbl2(n_star,9), dmp_mass
       Integer(kind=8) p_int(n_raw,2), p_int2(n_star,1)
 
       Integer(kind=4) i, j, nn
@@ -232,12 +239,14 @@
       ELSE IF (horg .LT. 0) THEN !DM
         Do i=1, n_raw
           IF(p_dbl(i,8) .EQ. 0) THEN
-            DO j=1, 9
-              p_dbl2(nn,j) = p_dbl(i,j)
-            ENDDO
+            IF(ABS(p_dbl(i,7)-dmp_mass)/dmp_mass .LT. 1e-5) THEN
+              DO j=1, 9
+                p_dbl2(nn,j) = p_dbl(i,j)
+              ENDDO
 
-            p_int2(nn,1) = p_int(i,1)
-            nn = nn + 1
+              p_int2(nn,1) = p_int(i,1)
+              nn = nn + 1
+            ENDIF
           ENDIF
         ENDDO
       ENDIF
@@ -247,13 +256,16 @@
 !!!!!
 !! GET PARTICLE NUM
 !!!!!
-      SUBROUTINE GET_PTCL_NUM(rint, n_raw, n_star, n_thread, horg)
+      SUBROUTINE GET_PTCL_NUM(rint, rdbl, n_raw, n_star, n_thread, &
+                horg, dmp_mass)
 
       IMPLICIT NONE
       INTEGER(KIND=4) n_raw, n_star, n_thread
       INTEGER(KIND=8) rint(n_raw, 2)
+      REAL(KIND=8) rdbl(n_raw,9)
 
       INTEGER(KIND=4) i, j, k, horg
+      REAL(KIND=8) dmp_mass
 
       CALL OMP_SET_NUM_THREADS(n_thread)
       n_star = 0
@@ -267,7 +279,10 @@
       ELSE IF (horg .LT. 0.) THEN !DM
         !$OMP PARALLEL DO default(shared) schedule(static) reduction(+:n_star)
         DO i=1, n_raw
-          IF(rint(i,2) .EQ. 1) n_star = n_star + 1
+          IF(rint(i,2) .EQ. 1) THEN
+            IF(ABS(rdbl(i,7) - dmp_mass)/dmp_mass .LT. 1e-5) &
+                n_star = n_star + 1
+          ENDIF
         ENDDO
         !$OMP END PARALLEL DO
       ENDIF
@@ -278,11 +293,12 @@
 !!!!!
 !! GET PARTICLE NUM_YZiCS
 !!!!!
-      SUBROUTINE GET_PTCL_NUM_YZiCS(age, n_raw, n_star, n_thread, horg)
+      SUBROUTINE GET_PTCL_NUM_YZiCS(age, n_raw, n_star, n_thread, &
+        horg, dmp_mass)
 
       IMPLICIT NONE
       INTEGER(KIND=4) n_raw, n_star, n_thread
-      REAL(KIND=8) age(n_raw,9)
+      REAL(KIND=8) age(n_raw,9), dmp_mass
 
       INTEGER(KIND=4) i, j, k, horg
 
@@ -298,7 +314,10 @@
       ELSE IF (horg .LT. 0) THEN
         !$OMP PARALLEL DO default(shared) schedule(static) reduction(+:n_star)
         DO i=1, n_raw
-          IF(age(i,8) .EQ. 0) n_star = n_star + 1
+          IF(age(i,8) .EQ. 0) THEN
+           IF(ABS(age(i,7) - dmp_mass)/dmp_mass .LT. 1e-5) &
+             n_star = n_star + 1
+          ENDIF
         ENDDO
         !$OMP END PARALLEL DO
       ENDIF

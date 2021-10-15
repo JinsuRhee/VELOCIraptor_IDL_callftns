@@ -13,9 +13,74 @@ FUNCTION f_rdgal_getidlist, flist
 	RETURN, idlist
 END
 
-FUNCTION f_rdgal, n_snap, Gprop2, mrange=mrange, id0=id0, dir=dir, horg=horg, $
+;;---------------
+;; IDL routine for calling VR output
+;;	Written by JR
+;;	(jinsu.rhee@gmail.com)
+;;
+;; Name
+;;	- f_rdgal
+;;
+;; Purpose
+;;	- read galaxy list as a structure array
+;;
+;; Input
+;;	- snapshot number
+;;		
+;;	- id
+;;		VR Galaxy (or Halo) ID to call
+;;		negative ID calls all galaxies
+;;
+;; Keyword
+;;	- header
+;;		full path for 'vrheader.txt' which includes default setting values of VR outputs
+;;
+;;	- horg
+;;		halo('h') or galaxy('g') specification
+;;		default setting is 'g'
+;;
+;;	- column_list (not required if header keyword is set)
+;;		list of galaxy properties that you want to call
+;;		['Xc', 'Yc', ...]
+;;		refer to the VR raw output file (*.dat.properties.0)
+;;
+;;	- dir (not required if header keyword is set)
+;;		full parth for the raw VR output
+;;
+;;	- num_thread
+;;		not available
+;; Example
+;;	gal = f_rdgal(1026, -1L, header='vrheader.txt', horg='g')
+;;		'read all galaxies at #SS = 1026'
+;;	gal = f_rdgal(1026, 1L, horg='g', column_list=['Xc', 'Yc', 'Zc', 'Mass_tot'], dir='a/full/path/VELOCIraptor/')
+;;		'read ID=1 galaxy at #SS = 1026 with its position and total mass output'
+;;---------------
+FUNCTION f_rdgal, n_snap, id0, header=header, horg=horg, $
+	column_list=column_list, dir=dir, $
 	num_thread=num_thread
 
+	;;-----
+	;; Initial Settings
+	;;-----
+	IF KEYWORD_SET(header) THEN BEGIN
+		settings	 = f_rdheader(header)
+		Gprop2	= settings.column_list
+		IF horg EQ 'g' THEN Gprop2 = [Gprop2, settings.gal_prop]
+		dir	= settings.dir_catalog
+		dir_lib	= settings.dir_lib
+	ENDIF ELSE BEGIN
+		IF ~KEYWORD_SET(dir) OR ~KEYWORD_SET(column_list) THEN BEGIN
+			PRINT, '%123123	-----'
+			PRINT, '	Either header or column_list/dir keywords should turn on'
+			DOC_LIBRARY, 'f_rdgal'
+			RETURN, -1
+		ENDIF
+		Gprop2	= column_list
+		FINDPRO, 'f_rdgal', dirlist=curr_dir, /noprint
+		dir_lib = curr_dir(0)
+	ENDELSE
+
+	IF ~KEYWORD_SET(horg) THEN horg = 'g'
 	;;-----
 	;; Correction for the naming convention
 	;;-----
@@ -24,26 +89,17 @@ FUNCTION f_rdgal, n_snap, Gprop2, mrange=mrange, id0=id0, dir=dir, horg=horg, $
 		IF Gprop(i) EQ 'sfr' THEN Gprop(i) = 'SFR'
 		IF Gprop(i) EQ 'ABMAG' OR $
 			Gprop(i) EQ 'abmag' THEN Gprop(i) = 'ABmag'
-		IF Gprop(i) EQ 'SFR' THEN Gprop = [Gprop, 'SFR_clumpycorr']
+		;IF Gprop(i) EQ 'SFR' THEN Gprop = [Gprop, 'SFR_clumpycorr']
 	ENDFOR
 
 	;;-----
 	;; Settings
 	;;-----
-	IF ~KEYWORD_SET(dir) THEN BEGIN
-		PRINT, 'catalog dir should be referred'
-		DOC_LIBRARY, 'f_rdgal'
-		RETURN, -1
-	ENDIF
-
-	FINDPRO, 'f_rdgal', dirlist=curr_dir, /noprint
-	dir_lib = curr_dir(0)
-
 	dir_catalog	= dir
 	IF horg EQ 'g' THEN $
-		dir_catalog += 'Galaxy/VR_Galaxy/snap_' + string(n_snap,format='(I4.4)') + '/'
+		dir_catalog += 'Galaxy/VR_Galaxy/snap_' + STRING(n_snap,format='(I4.4)') + '/'
 	IF horg EQ 'h' THEN $
-		dir_catalog += 'Halo/VR_Halo/snap_' + string(n_snap,format='(I4.4)') + '/'
+		dir_catalog += 'Halo/VR_Halo/snap_' + STRING(n_snap,format='(I4.4)') + '/'
 
 	IF ~KEYWORD_SET(num_thread) THEN num_thread = 1L
 
@@ -66,8 +122,6 @@ FUNCTION f_rdgal, n_snap, Gprop2, mrange=mrange, id0=id0, dir=dir, horg=horg, $
 	FOR j=0L, N_ELEMENTS(Gprop) - 1L DO BEGIN
 		did	= H5D_OPEN(fid, '/G_Prop/G_' + $
 			STRTRIM(Gprop(j),2))
-		;tmp	= 't' + Gprop(j) + '= Gprop(j)'
-		;void	= EXECUTE(tmp)
 		IF Gprop(j) EQ 'SFR' OR Gprop(j) EQ 'ABmag' OR Gprop(j) EQ 'SFR_clumpycorr' THEN BEGIN
 			tmp	= 't' + Gprop(j) + '= H5D_READ(did)'
 		ENDIF ELSE BEGIN
@@ -124,6 +178,9 @@ FUNCTION f_rdgal, n_snap, Gprop2, mrange=mrange, id0=id0, dir=dir, horg=horg, $
 
 	;;-----
 	;; READ BY FORTRAN
+	;;
+	;;	--JS--
+	;;		To Do list... read multiple hdf5 files with a fortran routine (perhaps w/ omp parallelization)
 	;;-----
 	;idlist	= f_rdgal_getidlist(flist)
 
@@ -161,6 +218,7 @@ FUNCTION f_rdgal, n_snap, Gprop2, mrange=mrange, id0=id0, dir=dir, horg=horg, $
 	;	STOP
 	;ENDFOR
 	;STOP
+
 	;;-----
 	;; Read Galaxies
 	;;-----

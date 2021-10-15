@@ -1,4 +1,4 @@
-FUNCTION f_getevol, tree2, id0, numsnap, datalist, horg=horg, dir=dir;, tmerit=tmerit, tmass=tmass
+FUNCTION f_getevol, tree2, numsnap, id0, header=header, datalist=datalist, horg=horg, dir=dir;, tmerit=tmerit, tmass=tmass
 
 	;;-----
 	;; Settings
@@ -10,14 +10,19 @@ FUNCTION f_getevol, tree2, id0, numsnap, datalist, horg=horg, dir=dir;, tmerit=t
 	IF ~KEYWORD_SET(horg) THEN horg = 'g'
 
 	;;-----
+	;; READ FINAL GAL FIRST
+	;;-----
+	IF ~KEYWORD_SET(header) THEN g = f_rdgal(n0, id0, column_list=datalist, dir=dir, horg=horg)
+	IF KEYWORD_SET(header) THEN g = f_rdgal(n0, id0, horg=horg, header=header)
+
+	;;-----
 	;; Memory Allocate
 	;;-----
 
-	IF TYPENAME(tree) EQ 'INT' THEN $
-		RETURN, f_rdgal(n0, datalist, id0=id0, dir=dir, horg=horg)
+	IF TYPENAME(tree) EQ 'LONG' THEN $
+		RETURN, g
 
-	GAL	= REPLICATE(f_rdgal(n0, datalist, id0=1L, dir=dir, horg=horg), $
-		N_ELEMENTS(tree.id))
+	GAL	= REPLICATE(g, N_ELEMENTS(tree.id))
 
 
 	slist	= tree.snap
@@ -35,8 +40,8 @@ FUNCTION f_getevol, tree2, id0, numsnap, datalist, horg=horg, dir=dir;, tmerit=t
 	;; Input
 	;;----
 	FOR i=0L, N_ELEMENTS(ilist)-1L DO BEGIN
-		IF ~KEYWORD_SET(quick) THEN $
-			GAL(i)	= f_rdgal(slist(i), datalist, id0=ilist(i), dir=dir, horg=horg)
+		IF KEYWORD_SET(header) THEN GAL(i) = f_rdgal(slist(i), ilist(i), horg=horg, header=header)
+		IF ~KEYWORD_SET(header) THEN GAL(i) = f_rdgal(slist(i), ilist(i), column_list=datalist, dir=dir, horg=horg)
 	ENDFOR
 
 	RETURN, GAL
