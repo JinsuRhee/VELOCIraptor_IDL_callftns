@@ -1,48 +1,140 @@
+;;---------------
+;; IDL routine for calling VR output
+;;      Written by JR
+;;      (jinsu.rhee@gmail.com)
 ;;
-;;	gid : Galaxy ID (not an index)
+;; Name
+;;      - f_rdptcl
 ;;
-;;	family : boolean
-;;		if raw data files contain family types
-;;	boxrange : boxsize in Kpc
-FUNCTION f_rdptcl, gid, n_snap, num_thread=num_thread, $
-	dir_raw=dir_raw, dir_catalog=dir_catalog, $
+;; Purpose
+;;      - read particles (member or around) of a galaxy/halo
+;;
+;; Input
+;;      - snapshot number
+;;
+;;      - id
+;;              VR Galaxy (or Halo) ID to call
+;;              negative ID calls all galaxies
+;;
+;; Keyword
+;;      - header
+;;              full path for 'vrheader.txt' which includes default setting values of VR outputs
+;;
+;;      - horg
+;;              halo('h') or galaxy('g') specification
+;;              default setting is 'g'
+;;
+;;	- num_thread
+;;		# of threads (for reading RAMSES raw particle with multi-thread)
+;;
+;;	- p_pos, p_vel, p_gyr, p_sfactor, p_mass, p_flux, p_metal, p_id : boolean
+;;		Output related options
+;;
+;;	- raw : boolean
+;;		Read all particles around a galaxy (boxrange should be specified)
+;;
+;;	- boxrange
+;;		A cubic box size in length (physical distance in kpc)
+;;
+;;	- domlist
+;;		When raw keyword is set, domain list is saved in this variable
+;;
+;;	- family : boolean (not required if header keyword is set)
+;;		if set, ramses part.out is read using family type
+;;
+;;	- llint : boolean (not required if header keyword is set)
+;;		if set, ID is read with long64
+;;
+;;	- neff (not required if header keyword is set)
+;;		required when reading DM particles. If a zoom-in simulation is used, the most fine level is used to read fine DM particles.
+;;		neff = 2^l
+;;
+;;	- dir_raw (not required if header keyword is set)
+;;		a full path for the RAMSES raw output
+;;
+;;	- dir_catalog (not required if header keyword is set)
+;;		a full path for the VR raw output
+;;
+;;	- flux_list (not required if header keyword is set)
+;;		flux list
+;;
+;; Example
+;;      ptcl = f_rdptcl(1026L, 1L, horg='g', header='a/full/path/for/your/header', num_thread=10, /p_pos, /p_mass)
+;;              'read member particles of Galaxy (ID=1) at #SS = 1026'
+;;      ptcl = f_rdptcl(1026L, 1L, horg='g', num_thread=48L, /p_pos, /p_vel, /p_gyr, /p_flux, $
+;;		/family, dir_raw='a/ramses/raw/output/', dir_catalog='a/full/path/for/vr/output', $
+;;		/raw, boxrange=100.
+;;              'read all particles within a box with 100 Kpc around Galaxy (ID=1) at #SS = 1026
+;;---------------
+FUNCTION f_rdptcl, n_snap, gid, $
+	horg=horg, $
+	header=header, $
+	num_thread=num_thread, $
 	p_pos=p_pos, p_vel=p_vel, p_gyr=p_gyr, p_sfactor=p_sfactor, $
 	p_mass=p_mass, p_flux=p_flux, p_metal=p_metal, p_id=p_id, $
-	flux_list=flux_list, $
-	llint=llint, raw=raw, alldom=alldom, domlist=domlist, $
-	boxrange=boxrange, $
-	family=family, horg=horg
+	raw=raw, boxrange=boxrange, domlist=domlist, $
+	family=family, llint=llint, neff=neff, $
+	dir_raw=dir_raw, dir_catalog=dir_catalog, $
+	flux_list=flux_list
 
 	;;-----
 	;; Settings
 	;;-----
-	FINDPRO, 'f_rdptcl', dirlist=curr_dir
-	dir_lib	= curr_dir(0)
+	IF KEYWORD_SET(header) THEN BEGIN
+		settings	= f_rdheader(header)
 
-	IF ~KEYWORD_SET(dir_catalog) OR ~KEYWORD_SET(dir_raw) THEN BEGIN
-		PRINT, 'dir location should be referred'
-		DOC_LIBRARY, 'f_rdptcl'
-		RETURN, 0L
-	ENDIF
+		idtype 	= -1L
+		IF settings.idtype EQ 'long64' THEN idtype = 1L
 
-	IF ~KEYWORD_SET(flux_list) THEN BEGIN
-		IF KEYWORD_SET(p_flux) THEN BEGIN
-			PRINT, 'flux list should be input when p_flux turned on'
+		famtype	= -1L
+		IF settings.famtype EQ 'new' THEN famtype = 1L
+
+		neff	= settings.neff
+
+		dir_raw		= settings.dir_raw
+		dir_catalog	= settings.dir_catalog
+		dir_lib		= settings.dir_lib
+		IF ~KEYWORD_SET(flux_list) THEN flux_list = settings.flux_list
+		n_domain	= settings.ndomain
+	ENDIF ELSE BEGIN
+		idtype	= -1L
+		IF KEYWORD_SET(llint) THEN idtype = 1L
+
+		famtype	= -1L
+		IF KEYWORD_SET(family) THEN famtype = 1L
+
+		IF ~KEYWORD_SET(neff) AND horg EQ 'h' THEN BEGIN
+			PRINT, '%123123-----'
+			PRINT, '	Neff should be specified for zoom-in simulations'
+			PRINT, '%123123-----'
 			DOC_LIBRARY, 'f_rdptcl'
-			RETURN, 0L
+			RETURN, -1L
 		ENDIF
 
-		flux_list	= ['u']
-	ENDIF
+		IF ~KEYWORD_SET(dir_catalog) OR ~KEYWORD_SET(dir_raw) THEN BEGIN
+			PRINT, 'dir location should be referred'
+			DOC_LIBRARY, 'f_rdptcl'
+			RETURN, -1L
+		ENDIF
 
-	IF ~KEYWORD_SET(p_gyr) AND KEYWORD_SET(p_flux) THEN BEGIN
-		PRINT, 'p_gyr should be turned on when computing flux'
-		DOC_LIBRARY, 'f_rdptcl'
-		RETURN, 0L
-	ENDIF
+		FINDPRO, 'f_rdptcl', dirlist=curr_dir
+		dir_lib	= curr_dir(0)
+
+		IF ~KEYWORD_SET(flux_list) THEN BEGIN
+			IF KEYWORD_SET(p_flux) THEN BEGIN
+				PRINT, 'flux list should be input when p_flux turned on'
+				DOC_LIBRARY, 'f_rdptcl'
+				RETURN, -1L
+			ENDIF
+		ENDIF
+	ENDELSE
+
+
+	IF ~KEYWORD_SET(p_gyr) AND KEYWORD_SET(p_flux) THEN p_gyr = 1B
 
 	IF ~KEYWORD_SET(num_thread) THEN num_thread=1L
 	IF ~KEYWORD_SET(horg) THEN horg='g'
+
 	;;-----
 	;; Read Particle IDs & Domain & Center & Radius
 	;;	*) Halo options should be added though horg keyword !!
@@ -61,7 +153,7 @@ FUNCTION f_rdptcl, gid, n_snap, num_thread=num_thread, $
 		fid = H5F_OPEN(fname) & did = H5D_OPEN(fid, '/Domain_List')
 		dom_list = H5D_READ(did) & H5D_CLOSE, did & H5F_CLOSE, fid
 	ENDIF ELSE IF horg EQ 'h' THEN BEGIN
-		dom_list	= LONARR(4800)-1L
+		dom_list	= LONARR(n_domain)-1L
 	ENDIF
 
 	fid	= H5F_OPEN(fname)
@@ -77,7 +169,10 @@ FUNCTION f_rdptcl, gid, n_snap, num_thread=num_thread, $
 	infoname	= dir_raw + 'output_' + STRING(n_snap,format='(I5.5)') + $
 		'/info_' + STRING(n_snap,format='(I5.5)') + '.txt'
 	rd_info, siminfo, file=infoname
-
+	IF horg EQ 'h' THEN BEGIN
+		Neff	= DOUBLE(Neff)
+		dmp_mass	= 1.0d / (Neff*Neff*Neff) * (siminfo.omega_m - siminfo.omega_B) / siminfo.omega_M
+	ENDIF
 	;;-----
 	;; Settings
 	;;-----
@@ -111,9 +206,10 @@ FUNCTION f_rdptcl, gid, n_snap, num_thread=num_thread, $
 			IF horg EQ 'h' THEN larr(11) = -10L
 			larr(18)= 0L
 			larr(19)= 0L
-			IF KEYWORD_SET(family) THEN larr(18) = 100L
-			IF KEYWORD_SET(llint) THEN larr(19)= 100L
+			IF famtype EQ 1L THEN larr(18) = 100L
+			IF idtype EQ 1L THEN larr(19)= 100L
 
+			IF horg EQ 'h' THEN darr(11) = dmp_mass
 		void	= CALL_EXTERNAL(ftr_name, 'get_ptcl', $
 			larr, darr, dir_raw, pid, pinfo, dlist)
 
@@ -163,14 +259,15 @@ FUNCTION f_rdptcl, gid, n_snap, num_thread=num_thread, $
 			larr(17)	= 100L
 			larr(18)	= 0L
 			larr(19)	= 0L
-			IF KEYWORD_SET(family) THEN larr(18) = 100L
-			IF KEYWORD_SET(llint) THEN larr(19)= 100L
+			IF famtype EQ 1L THEN larr(18) = 100L
+			IF idtype EQ 1L THEN larr(19)= 100L
+
+			IF horg EQ 'h' THEN darr(11) = dmp_mass
 
 		void	= CALL_EXTERNAL(ftr_name, 'get_ptcl', $
 			larr, darr, dir_raw, pid, pinfo, dlist)
 		pinfo	= pinfo(0L:larr(16)-1L,*)
 	ENDELSE
-
 	;;-----
 	;; Extract
 	;;-----

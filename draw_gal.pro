@@ -12,14 +12,15 @@ FUNCTION draw_gal_minmax, den, min=min, max=max
         RETURN, den
 END
 
-FUNCTION draw_gal, id, nsnap, $
+FUNCTION draw_gal, nsnap, id, $
+	vrheader=vrheader, $
 	num_thread=num_thread, $
-	dir_raw=dir_raw, dir_catalog=dir_catalog, $
 	raw=raw, boxrange=boxrange, $
 	n_pix=n_pix, min=min, max=max, $
 	scale_type=scale_type, $
 	adap_range=adap_range, $
-	proj=proj, dlist=dlist, horg=horg
+	proj=proj, dlist=dlist, horg=horg, weight=weight, $
+	dir_raw=dir_raw, dir_catalog=dir_catalog, Neff=Neff
 
 	;;-----
 	;; SETTINGS
@@ -30,11 +31,24 @@ FUNCTION draw_gal, id, nsnap, $
 	IF ~KEYWORD_SET(max) THEN max=1e11
 	IF ~KEYWORD_SET(scale_type) THEN scale_type='log'
 	IF ~KEYWORD_SET(horg) THEN horg = 'g'
+	IF ~KEYWORD_SET(weight) THEN weight='mass'
+	IF ~KEYWORD_SET(proj) THEN proj = 'xy'
+
+	IF horg EQ 'h' AND ~KEYWORD_SET(Neff) AND ~KEYWORD_SET(vrheader) THEN BEGIN
+                PRINT, '%123123 -----'
+                PRINT, '        Specify "Neff"'
+                DOC_LIBRARY, 'draw_gal'
+                STOP
+        ENDIF
 
 	;;-----
 	;; LOAD GAL
 	;;-----
-	gal	= f_rdgal(nsnap, ['Xc', 'Yc', 'Zc'], dir=dir_catalog, id0=id, horg=horg)
+	IF KEYWORD_SET(vrheader) THEN BEGIN
+		gal	= f_rdgal(nsnap, id, header=vrheader, horg=horg)
+	ENDIF ELSE BEGIN
+		gal	= f_rdgal(nsnap, id, column_list=['Xc', 'Yc', 'Zc'], dir=dir_catalog, horg=horg)
+	ENDELSE
 
 	cen	= [gal.xc, gal.yc]
 	cind	= [0L, 1L]
@@ -51,11 +65,24 @@ FUNCTION draw_gal, id, nsnap, $
 		PRINT, 'set the projection here'
 		STOP
 	ENDELSE
+
 	;;-----
 	;; LOAD PTCL
 	;;-----
-	tmp	= 'ptcl = f_rdptcl(id, nsnap, num_thread=num_thread, ' + $
-		'dir_raw=dir_raw, dir_catalog=dir_catalog, /p_pos, /p_mass, horg=horg'
+	IF KEYWORD_SET(vrheader) THEN BEGIN
+		tmp	= 'ptcl = f_rdptcl(nsnap, id, num_thread=num_thread, ' + $
+			'header=vrheader, /p_pos, horg=horg'
+	ENDIF ELSE BEGIN
+		tmp	= 'ptcl = f_rdptcl(nsnap, id, num_thread=num_thread, ' + $
+			'dir_raw=dir_raw, dir_catalog=dir_catalog, /p_pos, horg=horg'
+		IF horg EQ 'h' THEN tmp += ', Neff=Neff'
+	ENDELSE
+
+	IF weight EQ 'mass' THEN BEGIN
+		tmp	+= ', /p_mass'
+	ENDIF ELSE BEGIN
+		tmp	+= ', /p_gyr, /p_flux, flux_list=["' + STRTRIM(weight,2) + '"]'
+	ENDELSE
 
 	IF KEYWORD_SET(raw) THEN BEGIN
 		IF ~KEYWORD_SET(boxrange) THEN BEGIN
@@ -82,9 +109,16 @@ FUNCTION draw_gal, id, nsnap, $
 	yr	= [-1., 1.]*boxrange + cen(1)
 	bw	= [xr(1)-xr(0), yr(1)-yr(0)]/n_pix
 
+	IF weight EQ 'mass' THEN BEGIN
+		ww	= ptcl.mp
+	ENDIF ELSE BEGIN
+		tmp2	= 'ww = ptcl.f_' + STRTRIM(weight,2)
+		void	= EXECUTE(tmp2)
+	ENDELSE
+
 	den	= js_kde($
 		xx=ptcl.xp(*,cind(0)), yy=ptcl.xp(*,cind(1)), xrange=xr, yrange=yr, $
-		n_pix=n_pix, mode=-1L, kernel=1L, bandwidth=bw, weight=ptcl.mp, $
+		n_pix=n_pix, mode=-1L, kernel=1L, bandwidth=bw, weight=ww, $
 		num_thread=num_thread, /silent)
 
 	;;-----
@@ -97,6 +131,7 @@ FUNCTION draw_gal, id, nsnap, $
 	IF scale_type EQ 'asinh' THEN $
 		img	= ASINH(10.*img)/3.
 
+	img	= img < 1.
 	img	= BYTE(img*255.)
 
 	RETURN, img
