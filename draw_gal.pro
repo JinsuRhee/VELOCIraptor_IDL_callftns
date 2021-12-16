@@ -20,7 +20,7 @@ FUNCTION draw_gal, nsnap, id, $
 	scale_type=scale_type, $
 	adap_range=adap_range, $
 	proj=proj, dlist=dlist, horg=horg, weight=weight, $
-	dir_raw=dir_raw, dir_catalog=dir_catalog, Neff=Neff
+	dir_raw=dir_raw, dir_catalog=dir_catalog, Neff=Neff, family=family, llint=llint
 
 	;;-----
 	;; SETTINGS
@@ -75,6 +75,8 @@ FUNCTION draw_gal, nsnap, id, $
 	ENDIF ELSE BEGIN
 		tmp	= 'ptcl = f_rdptcl(nsnap, id, num_thread=num_thread, ' + $
 			'dir_raw=dir_raw, dir_catalog=dir_catalog, /p_pos, horg=horg'
+		IF KEYWORD_SET(family) THEN tmp += ', /family'
+		IF KEYWORD_SET(llitn) THEN tmp += ', /llint'
 		IF horg EQ 'h' THEN tmp += ', Neff=Neff'
 	ENDELSE
 

@@ -43,7 +43,7 @@ FUNCTION f_rdamr, gid, n_snap=n_snap, $
 	;;-----
 	;; Domain & Center & Radius
 	;;-----
-	fname	= dir_catalog + 'VR_Galaxy/' + 'snap_' + $
+	fname	= dir_catalog + 'Galaxy/VR_Galaxy/' + 'snap_' + $
 		STRING(n_snap,format='(I4.4)') + '/GAL_' + $
 		STRING(gid,format='(I6.6)') + '.hdf5'
 	fid = H5F_OPEN(fname) & did = H5D_OPEN(fid, '/Domain_List')
